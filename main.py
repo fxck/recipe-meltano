@@ -7,6 +7,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 import logging
 import subprocess
 import re
@@ -43,7 +44,7 @@ def get_data_summary(db):
     """Get summary statistics from loaded data."""
     try:
         # Use fixed table name
-        table_name = "sales_data"  # Matches the entity name in tap-csv config
+        table_name = "sales_data"
 
         query = text(f"""
             SELECT
