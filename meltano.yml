@@ -7,7 +7,7 @@ plugins:
       pip_url: git+https://github.com/MeltanoLabs/tap-csv.git
       config:
         files:
-          - entity: sales_data
+          - entity: test_data
             path: ./sample_data.csv
             keys: ["id"]
             delimiter: ","
@@ -17,8 +17,7 @@ plugins:
       pip_url: git+https://github.com/MeltanoLabs/target-postgres.git
       config:
         default_target_schema: public
-        add_metadata_columns: true
   transformers:
     - name: dbt
-      variant: dbt-core
+      variant: dbt-labs
       pip_url: dbt-core~=1.5.0 dbt-postgres~=1.5.0
