@@ -2,16 +2,13 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse
 import meltano.core.tracking
 from meltano.core.project import Project
-import subprocess
-import os
 import os
 from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import logging
-import io
-import contextlib
+import subprocess
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,75 +37,58 @@ async def run_pipeline_task(run_id: int):
     db = SessionLocal()
     try:
         logger.info(f"Starting pipeline run {run_id}")
-
-        output_buffer = io.StringIO()
-        with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            try:
-                # Find project and configure
-                project = Project.find()
-                meltano.core.tracking.DISABLED = True
-
-                logger.info("Project found, preparing to run pipeline")
-
-                # Create and configure CLI context
-                context = CliContext(command="elt")
-                context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
-
-                logger.info(f"Executing pipeline with args: {context.command_args}")
-
-                # Find project and configure
-                project = Project.find()
-                meltano.core.tracking.DISABLED = True
-
-                # Get project directory
-                project_dir = project.root
-
-                # Set up environment
-                env = os.environ.copy()
-                env['MELTANO_PROJECT_ROOT'] = project_dir
-
-                # Execute meltano command
-                process = subprocess.Popen(
-                    ['meltano', 'elt', 'tap-csv', 'target-postgres', '--job-id', str(run_id)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=project_dir,
-                    env=env,
-                    text=True
-                )
-
-                # Capture output
-                stdout, stderr = process.communicate()
-                combined_output = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-
-                logger.info(f"Pipeline execution completed with return code: {process.returncode}")
-
-                if process.returncode != 0:
-                    raise Exception(f"Pipeline failed with return code {process.returncode}\n{combined_output}")
-
-                return combined_output
-
-            except Exception as e:
-                logger.error(f"Error during pipeline execution: {str(e)}")
-                raise
-
-        # Get the captured output
-        output_text = output_buffer.getvalue()
-        logger.info(f"Captured output: {output_text[:200]}...")  # Log first 200 chars
-
         pipeline_run = db.query(PipelineRun).get(run_id)
-        pipeline_run.status = "completed"
-        pipeline_run.output = output_text
-        logger.info(f"Pipeline run {run_id} completed successfully")
 
-        db.commit()
-    except Exception as e:
-        logger.error(f"Pipeline run {run_id} failed: {str(e)}")
-        pipeline_run = db.query(PipelineRun).get(run_id)
-        pipeline_run.status = "failed"
-        pipeline_run.output = str(e)
-        db.commit()
-        raise e
+        try:
+            # Find project
+            project = Project.find()
+            project_dir = project.root
+
+            # Disable tracking
+            meltano.core.tracking.DISABLED = True
+
+            # Set up environment
+            env = os.environ.copy()
+            env['MELTANO_PROJECT_ROOT'] = project_dir
+
+            logger.info(f"Executing meltano command in {project_dir}")
+
+            # Execute meltano command
+            process = subprocess.Popen(
+                ['meltano', 'elt', 'tap-csv', 'target-postgres', '--job-id', str(run_id)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=project_dir,
+                env=env,
+                text=True
+            )
+
+            # Capture output
+            stdout, stderr = process.communicate()
+            combined_output = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+            logger.info(f"Pipeline process completed with return code: {process.returncode}")
+
+            if process.returncode != 0:
+                error_msg = f"Pipeline failed with return code {process.returncode}"
+                logger.error(f"{error_msg}\n{combined_output}")
+                pipeline_run.status = "failed"
+                pipeline_run.output = combined_output
+                db.commit()
+                raise Exception(error_msg)
+
+            pipeline_run.status = "completed"
+            pipeline_run.output = combined_output
+            db.commit()
+            logger.info("Pipeline run completed successfully")
+
+        except Exception as e:
+            error_msg = f"Error during pipeline execution: {str(e)}"
+            logger.error(error_msg)
+            pipeline_run.status = "failed"
+            pipeline_run.output = error_msg
+            db.commit()
+            raise
+
     finally:
         db.close()
 
