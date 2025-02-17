@@ -189,7 +189,9 @@ async def root():
                         </a>
                     </div>
                 `;
-                statusDiv.insertBefore(newStatus, statusDiv.firstChild);
+
+                // Change from insertBefore to appendChild to maintain consistent ordering
+                statusDiv.appendChild(newStatus);
             }
 
             async function startPipeline() {
