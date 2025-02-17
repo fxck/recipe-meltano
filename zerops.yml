@@ -5,6 +5,7 @@ zerops:
       addToRunPrepare:
         - requirements.txt
         - meltano.yml
+        - plugins
     run:
       base: python@3.11
       ports:
