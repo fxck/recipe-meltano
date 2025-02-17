@@ -1,4 +1,3 @@
-# File: main.py
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse
 import meltano.core.tracking
@@ -10,6 +9,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import logging
+import io
+import contextlib
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,7 @@ class PipelineRun(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     start_time = sa.Column(sa.DateTime, default=datetime.utcnow)
     status = sa.Column(sa.String)
+    output = sa.Column(sa.Text, nullable=True)
 
 Base.metadata.create_all(bind=engine)
 
@@ -38,15 +40,18 @@ async def run_pipeline_task(run_id: int):
     try:
         logger.info(f"Starting pipeline run {run_id}")
         
-        project = Project.find()
-        meltano.core.tracking.DISABLED = True
-        
-        # Corrected CliContext initialization
-        context = CliContext(command="elt")
-        context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
+        # Capture output
+        output_buffer = io.StringIO()
+        with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
+            project = Project.find()
+            meltano.core.tracking.DISABLED = True
+            
+            context = CliContext(command="elt")
+            context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
         
         pipeline_run = db.query(PipelineRun).get(run_id)
         pipeline_run.status = "completed"
+        pipeline_run.output = output_buffer.getvalue()
         logger.info(f"Pipeline run {run_id} completed successfully")
         
         db.commit()
@@ -54,6 +59,7 @@ async def run_pipeline_task(run_id: int):
         logger.error(f"Pipeline run {run_id} failed: {str(e)}")
         pipeline_run = db.query(PipelineRun).get(run_id)
         pipeline_run.status = "failed"
+        pipeline_run.output = str(e)
         db.commit()
         raise e
     finally:
@@ -67,6 +73,35 @@ async def root():
     <head>
         <title>Meltano Pipeline Control</title>
         <script>
+            async function loadHistory() {
+                try {
+                    const response = await fetch('/runs');
+                    const data = await response.json();
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.innerHTML = '';
+                    
+                    data.runs.forEach(run => {
+                        addRunToHistory(run);
+                    });
+                } catch (error) {
+                    console.error('Error loading history:', error);
+                }
+            }
+
+            function addRunToHistory(run) {
+                const statusDiv = document.getElementById('status');
+                const newStatus = document.createElement('div');
+                newStatus.className = `status-item ${run.status}`;
+                newStatus.innerHTML = `
+                    <div class="run-header" onclick="showDetails(${run.run_id})">
+                        Run ${run.run_id}: ${run.status}
+                        <br>
+                        Started: ${new Date(run.start_time).toLocaleString()}
+                    </div>
+                `;
+                statusDiv.insertBefore(newStatus, statusDiv.firstChild);
+            }
+
             async function startPipeline() {
                 const button = document.getElementById('runButton');
                 button.disabled = true;
@@ -87,17 +122,13 @@ async def root():
                 try {
                     const response = await fetch(`/status/${runId}`);
                     const data = await response.json();
-                    const statusDiv = document.getElementById('status');
                     
-                    const newStatus = document.createElement('div');
-                    newStatus.className = `status-item ${data.status}`;
-                    newStatus.innerHTML = `
-                        Run ${data.run_id}: ${data.status}
-                        <br>
-                        Started: ${new Date(data.start_time).toLocaleString()}
-                    `;
-                    
-                    statusDiv.insertBefore(newStatus, statusDiv.firstChild);
+                    const existingRun = document.querySelector(`.status-item[data-run-id="${data.run_id}"]`);
+                    if (existingRun) {
+                        existingRun.className = `status-item ${data.status}`;
+                    } else {
+                        addRunToHistory(data);
+                    }
                     
                     if (data.status === 'started') {
                         setTimeout(() => updateStatus(runId), 2000);
@@ -106,9 +137,41 @@ async def root():
                     console.error('Error:', error);
                 }
             }
+
+            async function showDetails(runId) {
+                try {
+                    const response = await fetch(`/status/${runId}`);
+                    const data = await response.json();
+                    
+                    const modal = document.getElementById('detailsModal');
+                    const content = document.getElementById('modalContent');
+                    modal.style.display = 'block';
+                    
+                    content.innerHTML = `
+                        <h3>Pipeline Run ${data.run_id}</h3>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                        <p><strong>Started:</strong> ${new Date(data.start_time).toLocaleString()}</p>
+                        ${data.output ? `<pre class="output">${data.output}</pre>` : ''}
+                    `;
+                } catch (error) {
+                    console.error('Error loading details:', error);
+                }
+            }
+
+            function closeModal() {
+                const modal = document.getElementById('detailsModal');
+                modal.style.display = 'none';
+            }
+
+            // Load history when page loads
+            document.addEventListener('DOMContentLoaded', loadHistory);
         </script>
         <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                margin: 2rem;
+                line-height: 1.5;
+            }
             .container { max-width: 800px; margin: 0 auto; }
             button { 
                 background: #4CAF50; 
@@ -127,6 +190,11 @@ async def root():
                 padding: 15px;
                 border-radius: 4px;
                 background: #f5f5f5;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+            .status-item:hover {
+                background: #e0e0e0;
             }
             .started { border-left: 4px solid #2196F3; }
             .completed { border-left: 4px solid #4CAF50; }
@@ -139,6 +207,42 @@ async def root():
                 border-radius: 8px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+            }
+            .modal-content {
+                background: white;
+                margin: 10% auto;
+                padding: 20px;
+                width: 80%;
+                max-width: 700px;
+                border-radius: 8px;
+                position: relative;
+            }
+            .close {
+                position: absolute;
+                right: 20px;
+                top: 10px;
+                font-size: 24px;
+                cursor: pointer;
+            }
+            .output {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 4px;
+                overflow-x: auto;
+                white-space: pre-wrap;
+                font-family: monospace;
+            }
+            .run-header {
+                cursor: pointer;
+            }
         </style>
     </head>
     <body>
@@ -149,6 +253,13 @@ async def root():
             <div class="status-container">
                 <h2>Pipeline Runs</h2>
                 <div id="status"></div>
+            </div>
+        </div>
+
+        <div id="detailsModal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeModal()">&times;</span>
+                <div id="modalContent"></div>
             </div>
         </div>
     </body>
@@ -174,6 +285,22 @@ async def run_pipeline(background_tasks: BackgroundTasks):
     finally:
         db.close()
 
+@app.get("/runs")
+async def get_runs():
+    db = SessionLocal()
+    try:
+        runs = db.query(PipelineRun).order_by(PipelineRun.start_time.desc()).all()
+        return {
+            "runs": [{
+                "run_id": run.id,
+                "status": run.status,
+                "start_time": run.start_time,
+                "output": run.output
+            } for run in runs]
+        }
+    finally:
+        db.close()
+
 @app.get("/status/{run_id}")
 async def get_status(run_id: int):
     db = SessionLocal()
@@ -185,7 +312,8 @@ async def get_status(run_id: int):
         return {
             "run_id": pipeline_run.id,
             "status": pipeline_run.status,
-            "start_time": pipeline_run.start_time
+            "start_time": pipeline_run.start_time,
+            "output": pipeline_run.output
         }
     finally:
         db.close()
