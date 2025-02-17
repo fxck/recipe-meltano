@@ -46,32 +46,34 @@ def get_data_summary(db):
         # Use fixed table name
         table_name = "sales_data"
 
-        query = text(f"""
-            SELECT
-                COUNT(*) as total_records,
-                SUM(revenue) as total_revenue,
-                MIN(date) as earliest_date,
-                MAX(date) as latest_date
-            FROM "{table_name}";
-        """)
-        result = db.execute(query).fetchone()
+        # Create a new transaction for these queries
+        with db.begin():
+            query = text(f"""
+                SELECT
+                    COUNT(*) as total_records,
+                    SUM(revenue) as total_revenue,
+                    MIN(date) as earliest_date,
+                    MAX(date) as latest_date
+                FROM "{table_name}";
+            """)
+            result = db.execute(query).fetchone()
 
-        if not result or not result.total_records:
-            return "No records found in the data table"
+            if not result or not result.total_records:
+                return "No records found in the data table"
 
-        top_query = text(f"""
-            SELECT
-                name,
-                revenue,
-                date,
-                RANK() OVER (ORDER BY revenue DESC) as revenue_rank
-            FROM "{table_name}"
-            ORDER BY revenue DESC
-            LIMIT 3;
-        """)
-        top_products = db.execute(top_query).fetchall()
+            top_query = text(f"""
+                SELECT
+                    name,
+                    revenue,
+                    date,
+                    RANK() OVER (ORDER BY revenue DESC) as revenue_rank
+                FROM "{table_name}"
+                ORDER BY revenue DESC
+                LIMIT 3;
+            """)
+            top_products = db.execute(top_query).fetchall()
 
-        summary = f"""Data Summary:
+            summary = f"""Data Summary:
 -------------
 Total Records: {result.total_records}
 Total Revenue: ${result.total_revenue:,.2f}
@@ -79,11 +81,13 @@ Date Range: {result.earliest_date} to {result.latest_date}
 
 Top Products by Revenue:
 ---------------------""" + "\n".join(f"\n{row.name}: ${row.revenue:,.2f} ({row.date})"
-                for row in top_products)
+                    for row in top_products)
 
-        return summary
+            return summary
     except Exception as e:
         logger.error(f"Error getting data summary: {str(e)}")
+        # Ensure transaction is rolled back
+        db.rollback()
         return f"Error analyzing data: {str(e)}"
 
 async def run_pipeline_task(run_id: int):
@@ -116,8 +120,12 @@ async def run_pipeline_task(run_id: int):
                 db.commit()
                 raise Exception(error_msg)
 
-            # Get data summary
-            data_summary = get_data_summary(db)
+            # Create a new session for data summary
+            summary_db = SessionLocal()
+            try:
+                data_summary = get_data_summary(summary_db)
+            finally:
+                summary_db.close()
 
             pipeline_run.status = "completed"
             pipeline_run.output = f"""Pipeline Execution Summary:
@@ -135,8 +143,11 @@ Execution Log:
             logger.info("Pipeline run completed successfully")
 
         except Exception as e:
+            db.rollback()  # Ensure we rollback on error
             error_msg = f"Error during pipeline execution: {str(e)}"
             logger.error(error_msg)
+
+            # Start a new transaction for the error update
             pipeline_run.status = "failed"
             pipeline_run.output = error_msg
             db.commit()
