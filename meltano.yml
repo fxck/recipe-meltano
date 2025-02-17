@@ -7,7 +7,7 @@ plugins:
       pip_url: git+https://github.com/MeltanoLabs/tap-csv.git
       config:
         files:
-          - entity: test_data
+          - entity: sales_data
             path: /var/www/sample_data.csv
             keys: ["id"]
             delimiter: ","
