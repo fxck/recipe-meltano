@@ -2,9 +2,8 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse
 import meltano.core.tracking
 from meltano.core.project import Project
-from meltano.core.tracking.contexts import CliContext
-from meltano.core.cli import cli
-import click
+import subprocess
+import os
 import os
 from datetime import datetime
 import sqlalchemy as sa
@@ -57,19 +56,37 @@ async def run_pipeline_task(run_id: int):
 
                 logger.info(f"Executing pipeline with args: {context.command_args}")
 
-                # Create a new Click context
-                ctx = click.Context(cli)
-                ctx.obj = {'project': project}
+                # Find project and configure
+                project = Project.find()
+                meltano.core.tracking.DISABLED = True
 
-                # Execute the ELT command
-                result = cli.get_command(ctx, 'elt').invoke(
-                    ctx,
-                    ['tap-csv', 'target-postgres', '--job-id', str(run_id)]
+                # Get project directory
+                project_dir = project.root
+
+                # Set up environment
+                env = os.environ.copy()
+                env['MELTANO_PROJECT_ROOT'] = project_dir
+
+                # Execute meltano command
+                process = subprocess.Popen(
+                    ['meltano', 'elt', 'tap-csv', 'target-postgres', '--job-id', str(run_id)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=project_dir,
+                    env=env,
+                    text=True
                 )
 
-                logger.info("Pipeline execution completed")
-                if result != 0:
-                    raise Exception(f"Pipeline failed with exit code {result}")
+                # Capture output
+                stdout, stderr = process.communicate()
+                combined_output = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+
+                logger.info(f"Pipeline execution completed with return code: {process.returncode}")
+
+                if process.returncode != 0:
+                    raise Exception(f"Pipeline failed with return code {process.returncode}\n{combined_output}")
+
+                return combined_output
 
             except Exception as e:
                 logger.error(f"Error during pipeline execution: {str(e)}")
