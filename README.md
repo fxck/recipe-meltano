@@ -6,7 +6,7 @@ project:
 
 services:
   - hostname: db
-    type: postgres@16
+    type: postgresql@16
     mode: NON_HA
     priority: 10
     
