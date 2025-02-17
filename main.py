@@ -92,6 +92,21 @@ def get_data_summary(db):
         """)
         top_products = db.execute(top_query).fetchall()
 
+        summary = f"""Data Summary:
+-------------
+Total Records: {result.total_records}
+Total Revenue: ${result.total_revenue:,.2f}
+Date Range: {result.earliest_date} to {result.latest_date}
+
+Top Products by Revenue:
+---------------------""" + "\n".join(f"\n{row.name}: ${row.revenue:,.2f} ({row.date})"
+                for row in top_products)
+
+        return summary
+    except Exception as e:
+        logger.error(f"Error getting data summary: {str(e)}")
+        return f"Error analyzing data: {str(e)}"
+
 async def run_pipeline_task(run_id: int):
     db = SessionLocal()
     try:
