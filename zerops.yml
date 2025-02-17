@@ -1,0 +1,15 @@
+zerops:
+  - setup: meltano
+    build:
+      deploy: ./
+      addToRunPrepare: requirements.txt
+    run:
+      base: python@3.11
+      ports:
+        - port: 8000
+          httpSupport: true
+      prepareCommands:
+        - uv pip install --system -r requirements.txt 
+      start: gunicorn main:app --bind 0.0.0.0:8000 --workers ${WORKERS} --worker-class uvicorn.workers.UvicornWorker
+      envVariables:
+        DATABASE_URL: ${db_connectionUrl}/${db_databaseName}
