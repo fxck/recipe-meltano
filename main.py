@@ -55,7 +55,7 @@ async def run_pipeline_task(run_id: int):
 
             # Execute meltano command
             process = subprocess.Popen(
-                ['meltano', 'elt', 'tap-csv', 'target-postgres', '--job-id', str(run_id)],
+                ['meltano', 'elt', 'tap-csv', 'target-postgres'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=project_dir,
