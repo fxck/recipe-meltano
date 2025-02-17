@@ -132,202 +132,370 @@ STDERR:
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Meltano Pipeline Control</title>
-        <script>
-            async function loadHistory() {
-                try {
-                    const response = await fetch('/runs');
-                    const data = await response.json();
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Meltano Pipeline Control</title>
+            <script>
+                async function loadHistory() {
+                    try {
+                        const response = await fetch('/runs');
+                        const data = await response.json();
+                        const statusDiv = document.getElementById('status');
+                        statusDiv.innerHTML = '';
+
+                        data.runs.forEach(run => {
+                            addRunToHistory(run);
+                        });
+                    } catch (error) {
+                        console.error('Error loading history:', error);
+                    }
+                }
+
+                function addRunToHistory(run) {
                     const statusDiv = document.getElementById('status');
-                    statusDiv.innerHTML = '';
+                    const newStatus = document.createElement('div');
+                    newStatus.className = `status-item ${run.status}`;
+                    newStatus.setAttribute('data-run-id', run.run_id);
 
-                    data.runs.forEach(run => {
-                        addRunToHistory(run);
-                    });
-                } catch (error) {
-                    console.error('Error loading history:', error);
-                }
-            }
-
-            function addRunToHistory(run) {
-                const statusDiv = document.getElementById('status');
-                const newStatus = document.createElement('div');
-                newStatus.className = `status-item ${run.status}`;
-                newStatus.innerHTML = `
-                    <div class="run-header" onclick="showDetails(${run.run_id})">
-                        Run ${run.run_id}: ${run.status}
-                        <br>
-                        Started: ${new Date(run.start_time).toLocaleString()}
-                    </div>
-                `;
-                statusDiv.insertBefore(newStatus, statusDiv.firstChild);
-            }
-
-            async function startPipeline() {
-                const button = document.getElementById('runButton');
-                button.disabled = true;
-                try {
-                    const response = await fetch('/run', { method: 'POST' });
-                    const data = await response.json();
-                    button.disabled = false;
-                    updateStatus(data.run_id);
-                } catch (error) {
-                    console.error('Error:', error);
-                    button.disabled = false;
-                }
-            }
-
-            async function updateStatus(runId) {
-                if (!runId) return;
-
-                try {
-                    const response = await fetch(`/status/${runId}`);
-                    const data = await response.json();
-
-                    const existingRun = document.querySelector(`.status-item[data-run-id="${data.run_id}"]`);
-                    if (existingRun) {
-                        existingRun.className = `status-item ${data.status}`;
-                    } else {
-                        addRunToHistory(data);
-                    }
-
-                    if (data.status === 'started') {
-                        setTimeout(() => updateStatus(runId), 2000);
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                }
-            }
-
-            async function showDetails(runId) {
-                try {
-                    const response = await fetch(`/status/${runId}`);
-                    const data = await response.json();
-
-                    const modal = document.getElementById('detailsModal');
-                    const content = document.getElementById('modalContent');
-                    modal.style.display = 'block';
-
-                    content.innerHTML = `
-                        <h3>Pipeline Run ${data.run_id}</h3>
-                        <p><strong>Status:</strong> ${data.status}</p>
-                        <p><strong>Started:</strong> ${new Date(data.start_time).toLocaleString()}</p>
-                        ${data.output ? `<pre class="output">${data.output}</pre>` : ''}
+                    const timestamp = new Date(run.start_time).toLocaleString();
+                    newStatus.innerHTML = `
+                        <div class="run-summary">
+                            <div class="run-info">
+                                <div class="run-title">Run ${run.run_id}</div>
+                                <div class="run-details">
+                                    <span class="status-badge ${run.status}">${run.status}</span>
+                                    <span class="timestamp">${timestamp}</span>
+                                </div>
+                            </div>
+                            <a href="#/run/${run.run_id}" class="view-details" onclick="showDetails(${run.run_id}); return false;">
+                                View Details
+                            </a>
+                        </div>
                     `;
-                } catch (error) {
-                    console.error('Error loading details:', error);
+                    statusDiv.insertBefore(newStatus, statusDiv.firstChild);
                 }
-            }
 
-            function closeModal() {
-                const modal = document.getElementById('detailsModal');
-                modal.style.display = 'none';
-            }
+                async function startPipeline() {
+                    const button = document.getElementById('runButton');
+                    button.disabled = true;
+                    try {
+                        const response = await fetch('/run', { method: 'POST' });
+                        const data = await response.json();
+                        button.disabled = false;
+                        updateStatus(data.run_id);
+                    } catch (error) {
+                        console.error('Error:', error);
+                        button.disabled = false;
+                    }
+                }
 
-            // Load history when page loads
-            document.addEventListener('DOMContentLoaded', loadHistory);
-        </script>
-        <style>
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                margin: 2rem;
-                line-height: 1.5;
-            }
-            .container { max-width: 800px; margin: 0 auto; }
-            button {
-                background: #4CAF50;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 16px;
-            }
-            button:disabled {
-                background: #cccccc;
-            }
-            .status-item {
-                margin: 10px 0;
-                padding: 15px;
-                border-radius: 4px;
-                background: #f5f5f5;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            }
-            .status-item:hover {
-                background: #e0e0e0;
-            }
-            .started { border-left: 4px solid #2196F3; }
-            .completed { border-left: 4px solid #4CAF50; }
-            .failed { border-left: 4px solid #f44336; }
-            h1 { color: #333; }
-            .status-container {
-                margin-top: 2rem;
-                padding: 1rem;
-                background: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .modal {
-                display: none;
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0,0,0,0.5);
-            }
-            .modal-content {
-                background: white;
-                margin: 10% auto;
-                padding: 20px;
-                width: 80%;
-                max-width: 700px;
-                border-radius: 8px;
-                position: relative;
-            }
-            .close {
-                position: absolute;
-                right: 20px;
-                top: 10px;
-                font-size: 24px;
-                cursor: pointer;
-            }
-            .output {
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 4px;
-                overflow-x: auto;
-                white-space: pre-wrap;
-                font-family: monospace;
-            }
-            .run-header {
-                cursor: pointer;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Meltano Pipeline Control</h1>
-            <button id="runButton" onclick="startPipeline()">Start Pipeline</button>
+                async function updateStatus(runId) {
+                    if (!runId) return;
 
-            <div class="status-container">
-                <h2>Pipeline Runs</h2>
-                <div id="status"></div>
+                    try {
+                        const response = await fetch(`/status/${runId}`);
+                        const data = await response.json();
+
+                        const existingRun = document.querySelector(`.status-item[data-run-id="${data.run_id}"]`);
+                        if (existingRun) {
+                            existingRun.className = `status-item ${data.status}`;
+                        } else {
+                            addRunToHistory(data);
+                        }
+
+                        if (data.status === 'started') {
+                            setTimeout(() => updateStatus(runId), 2000);
+                        }
+
+                        // Update details page if we're viewing it
+                        const detailsPage = document.getElementById('run-details');
+                        if (detailsPage && detailsPage.getAttribute('data-run-id') == runId) {
+                            updateDetailsPage(data);
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                    }
+                }
+
+                async function showDetails(runId) {
+                    try {
+                        const response = await fetch(`/status/${runId}`);
+                        const data = await response.json();
+
+                        const mainContent = document.getElementById('main-content');
+                        const detailsPage = document.getElementById('run-details');
+
+                        mainContent.style.display = 'none';
+                        detailsPage.style.display = 'block';
+                        detailsPage.setAttribute('data-run-id', runId);
+
+                        updateDetailsPage(data);
+
+                        // Update URL without page reload
+                        window.history.pushState({}, '', `#/run/${runId}`);
+                    } catch (error) {
+                        console.error('Error loading details:', error);
+                    }
+                }
+
+                function updateDetailsPage(data) {
+                    const detailsPage = document.getElementById('run-details');
+                    const timestamp = new Date(data.start_time).toLocaleString();
+
+                    detailsPage.innerHTML = `
+                        <div class="details-header">
+                            <button onclick="showMain()" class="back-button">← Back to List</button>
+                            <h2>Pipeline Run ${data.run_id}</h2>
+                        </div>
+                        <div class="details-content">
+                            <div class="details-summary">
+                                <div class="summary-item">
+                                    <label>Status:</label>
+                                    <span class="status-badge ${data.status}">${data.status}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <label>Started:</label>
+                                    <span>${timestamp}</span>
+                                </div>
+                            </div>
+                            <div class="output-section">
+                                <h3>Output Log</h3>
+                                <pre class="output">${data.output || 'No output available'}</pre>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                function showMain() {
+                    const mainContent = document.getElementById('main-content');
+                    const detailsPage = document.getElementById('run-details');
+
+                    mainContent.style.display = 'block';
+                    detailsPage.style.display = 'none';
+
+                    // Update URL without page reload
+                    window.history.pushState({}, '', '/');
+                }
+
+                // Handle browser back/forward
+                window.onpopstate = function(event) {
+                    const hash = window.location.hash;
+                    if (hash.startsWith('#/run/')) {
+                        const runId = hash.split('/')[2];
+                        showDetails(runId);
+                    } else {
+                        showMain();
+                    }
+                };
+
+                // Load history when page loads
+                document.addEventListener('DOMContentLoaded', () => {
+                    loadHistory();
+
+                    // Check if we should show a specific run
+                    const hash = window.location.hash;
+                    if (hash.startsWith('#/run/')) {
+                        const runId = hash.split('/')[2];
+                        showDetails(runId);
+                    }
+                });
+            </script>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    margin: 0;
+                    line-height: 1.5;
+                    color: #333;
+                    background: #f5f5f5;
+                }
+
+                .container {
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 2rem;
+                }
+
+                .page-header {
+                    background: white;
+                    padding: 1.5rem;
+                    margin-bottom: 2rem;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+
+                button {
+                    background: #4CAF50;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    transition: background-color 0.2s;
+                }
+
+                button:hover {
+                    background: #45a049;
+                }
+
+                button:disabled {
+                    background: #cccccc;
+                }
+
+                .back-button {
+                    background: #666;
+                    margin-right: 1rem;
+                }
+
+                .back-button:hover {
+                    background: #555;
+                }
+
+                .status-item {
+                    background: white;
+                    margin: 10px 0;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    transition: transform 0.2s;
+                }
+
+                .status-item:hover {
+                    transform: translateY(-2px);
+                }
+
+                .run-summary {
+                    padding: 1.5rem;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                .run-info {
+                    flex-grow: 1;
+                }
+
+                .run-title {
+                    font-size: 1.2rem;
+                    font-weight: 600;
+                    margin-bottom: 0.5rem;
+                }
+
+                .run-details {
+                    display: flex;
+                    gap: 1rem;
+                    align-items: center;
+                }
+
+                .status-badge {
+                    padding: 0.25rem 0.75rem;
+                    border-radius: 12px;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                }
+
+                .status-badge.started { background: #e3f2fd; color: #1565c0; }
+                .status-badge.completed { background: #e8f5e9; color: #2e7d32; }
+                .status-badge.failed { background: #ffebee; color: #c62828; }
+
+                .timestamp {
+                    color: #666;
+                    font-size: 0.9rem;
+                }
+
+                .view-details {
+                    color: #2196F3;
+                    text-decoration: none;
+                    font-weight: 500;
+                }
+
+                .view-details:hover {
+                    text-decoration: underline;
+                }
+
+                .details-header {
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 2rem;
+                    padding-bottom: 1rem;
+                    border-bottom: 1px solid #eee;
+                }
+
+                .details-content {
+                    background: white;
+                    padding: 2rem;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+
+                .details-summary {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 1rem;
+                    margin-bottom: 2rem;
+                }
+
+                .summary-item label {
+                    display: block;
+                    font-weight: 500;
+                    margin-bottom: 0.5rem;
+                    color: #666;
+                }
+
+                .output-section {
+                    background: #f8f9fa;
+                    padding: 1.5rem;
+                    border-radius: 4px;
+                }
+
+                .output-section h3 {
+                    margin-top: 0;
+                    margin-bottom: 1rem;
+                    color: #555;
+                }
+
+                .output {
+                    background: #fff;
+                    padding: 1rem;
+                    border-radius: 4px;
+                    overflow-x: auto;
+                    white-space: pre-wrap;
+                    font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+                    font-size: 0.9rem;
+                    line-height: 1.5;
+                    color: #333;
+                    border: 1px solid #eee;
+                }
+
+                #run-details {
+                    display: none;
+                }
+
+                h1, h2 {
+                    color: #333;
+                    margin: 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div id="main-content">
+                    <div class="page-header">
+                        <h1>Meltano Pipeline Control</h1>
+                    </div>
+
+                    <button id="runButton" onclick="startPipeline()">Start Pipeline</button>
+
+                    <div class="status-container">
+                        <h2>Pipeline Runs</h2>
+                        <div id="status"></div>
+                    </div>
+                </div>
+
+                <div id="run-details"></div>
             </div>
-        </div>
-
-        <div id="detailsModal" class="modal">
-            <div class="modal-content">
-                <span class="close" onclick="closeModal()">&times;</span>
-                <div id="modalContent"></div>
-            </div>
-        </div>
-    </body>
-    </html>
+        </body>
+        </html>
     """
 
 @app.post("/run")
