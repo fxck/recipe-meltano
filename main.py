@@ -39,33 +39,11 @@ def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
-def find_latest_data_table(db):
-    """Find the most recently created data table."""
-    try:
-        # Import text from sqlalchemy
-        from sqlalchemy import text
-
-        table_query = text("""
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-        AND table_name ~ '^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$'
-        ORDER BY table_name DESC
-        LIMIT 1;
-        """)
-
-        result = db.execute(table_query).fetchone()
-        return result[0] if result else None
-    except Exception as e:
-        logger.error(f"Error finding latest table: {str(e)}")
-        return None
-
 def get_data_summary(db):
     """Get summary statistics from loaded data."""
     try:
-        table_name = find_latest_data_table(db)
-        if not table_name:
-            return "No data table found. The pipeline may not have completed successfully."
+        # Use fixed table name
+        table_name = "sales_data"  # Matches the entity name in tap-csv config
 
         query = text(f"""
             SELECT
@@ -77,7 +55,7 @@ def get_data_summary(db):
         """)
         result = db.execute(query).fetchone()
 
-        if not result.total_records:
+        if not result or not result.total_records:
             return "No records found in the data table"
 
         top_query = text(f"""
