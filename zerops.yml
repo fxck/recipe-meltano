@@ -1,7 +1,9 @@
 zerops:
   - setup: meltano
     build:
-      deployFiles: ./
+      deployFiles:
+        - main.py
+        - sample_data.csv
       addToRunPrepare:
         - requirements.txt
         - meltano.yml
