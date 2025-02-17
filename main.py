@@ -53,23 +53,24 @@ async def run_pipeline_task(run_id: int):
 
             logger.info(f"Executing meltano command in {project_dir}")
 
-            # Install plugins first
-            logger.info("Installing Meltano plugins...")
-            install_process = subprocess.Popen(
-                ['meltano', 'install'],
+            # Get environment information
+            logger.info(f"Current working directory: {os.getcwd()}")
+            logger.info(f"Project directory: {project_dir}")
+            logger.info(f"Environment variables: {env}")
+
+            # Check Meltano installation
+            check_process = subprocess.Popen(
+                ['meltano', '--version'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=project_dir,
                 env=env,
                 text=True
             )
-            install_stdout, install_stderr = install_process.communicate()
-            if install_process.returncode != 0:
-                raise Exception(f"Failed to install plugins:\n{install_stderr}")
+            check_stdout, check_stderr = check_process.communicate()
+            logger.info(f"Meltano version check: {check_stdout}")
 
-            logger.info("Plugins installed successfully")
-
-            # Execute meltano command (using 'el' instead of deprecated 'elt')
+            # Execute pipeline directly (skip installation for now)
             logger.info("Executing pipeline...")
             process = subprocess.Popen(
                 ['meltano', 'el', 'tap-csv', 'target-postgres', '--full-refresh'],
@@ -84,10 +85,15 @@ async def run_pipeline_task(run_id: int):
             stdout, stderr = process.communicate()
             combined_output = f"""Pipeline Execution Log:
 
-INSTALLATION:
--------------
-{install_stdout}
-{install_stderr}
+ENVIRONMENT:
+------------
+Working Directory: {os.getcwd()}
+Project Directory: {project_dir}
+
+MELTANO VERSION:
+---------------
+{check_stdout}
+{check_stderr}
 
 PIPELINE EXECUTION:
 ------------------
