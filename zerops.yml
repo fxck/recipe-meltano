@@ -9,6 +9,7 @@ zerops:
         - port: 8000
           httpSupport: true
       prepareCommands:
+        - sudo apk add gcc python3-dev musl-dev linux-headers
         - uv pip install --system -r requirements.txt 
       start: gunicorn main:app --bind 0.0.0.0:8000 --workers ${WORKERS} --worker-class uvicorn.workers.UvicornWorker
       envVariables:
