@@ -1,3 +1,4 @@
+# File: main.py
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse
 import meltano.core.tracking
@@ -40,8 +41,8 @@ async def run_pipeline_task(run_id: int):
         project = Project.find()
         meltano.core.tracking.DISABLED = True
         
-        context = CliContext()
-        context.command = "elt"
+        # Corrected CliContext initialization
+        context = CliContext(command="elt")
         context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
         
         pipeline_run = db.query(PipelineRun).get(run_id)
