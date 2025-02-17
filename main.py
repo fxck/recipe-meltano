@@ -39,44 +39,67 @@ def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
+def find_latest_data_table(db):
+    """Find the most recently created data table."""
+    try:
+        table_query = """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name ~ '^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$'
+        ORDER BY table_name DESC
+        LIMIT 1;
+        """
+        result = db.execute(table_query).fetchone()
+        return result[0] if result else None
+    except Exception as e:
+        logger.error(f"Error finding latest table: {str(e)}")
+        return None
+
 def get_data_summary(db):
     """Get summary statistics from loaded data."""
     try:
-        result = db.execute("""
+        table_name = find_latest_data_table(db)
+        if not table_name:
+            return "No data table found. The pipeline may not have completed successfully."
+
+        result = db.execute(f"""
             SELECT
                 COUNT(*) as total_records,
                 SUM(revenue) as total_revenue,
                 MIN(date) as earliest_date,
                 MAX(date) as latest_date
-            FROM test_data;
+            FROM "{table_name}";
         """).fetchone()
 
-        top_products = db.execute("""
+        if not result.total_records:
+            return "No records found in the data table"
+
+        top_products = db.execute(f"""
             SELECT
                 name,
                 revenue,
+                date,
                 RANK() OVER (ORDER BY revenue DESC) as revenue_rank
-            FROM test_data
+            FROM "{table_name}"
             ORDER BY revenue DESC
             LIMIT 3;
         """).fetchall()
 
-        summary = f"""
-Data Load Summary:
------------------
-Total Products: {result.total_records}
+        summary = f"""Data Summary:
+-------------
+Total Records: {result.total_records}
 Total Revenue: ${result.total_revenue:,.2f}
 Date Range: {result.earliest_date} to {result.latest_date}
 
-Top Revenue Products:
--------------------
-""" + "\n".join(f"#{row.revenue_rank}: {row.name} (${row.revenue:,.2f})"
+Top Products by Revenue:
+---------------------""" + "\n".join(f"\n{row.name}: ${row.revenue:,.2f} ({row.date})"
                 for row in top_products)
 
         return summary
     except Exception as e:
         logger.error(f"Error getting data summary: {str(e)}")
-        return "Error retrieving data summary"
+        return f"Error analyzing data: {str(e)}"
 
 async def run_pipeline_task(run_id: int):
     db = SessionLocal()
@@ -99,8 +122,6 @@ async def run_pipeline_task(run_id: int):
             )
 
             stdout, stderr = process.communicate()
-
-            # Clean and format the output
             clean_output = clean_ansi(stderr)
 
             if process.returncode != 0:
@@ -113,20 +134,18 @@ async def run_pipeline_task(run_id: int):
             # Get data summary
             data_summary = get_data_summary(db)
 
-            # Format final output
             pipeline_run.status = "completed"
-            pipeline_run.output = f"""
-Pipeline Execution Summary:
+            pipeline_run.output = f"""Pipeline Execution Summary:
 -------------------------
 Status: Completed Successfully
 Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}
 
 {data_summary}
 
-Detailed Log:
+Execution Log:
 ------------
-{clean_output}
-"""
+{clean_output}"""
+
             db.commit()
             logger.info("Pipeline run completed successfully")
 
@@ -420,7 +439,7 @@ async def root():
             }
 
             .details-content {
-                background: white;
+background: white;
                 padding: 2rem;
                 border-radius: 8px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -452,7 +471,6 @@ async def root():
                 border-radius: 4px;
                 overflow-x: auto;
                 white-space: pre-wrap;
-                font-family: "SF Mono", Consolas, "Liberation Mono
                 font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
                 font-size: 0.9rem;
                 line-height: 1.5;
