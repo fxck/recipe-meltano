@@ -60,9 +60,105 @@ async def run_pipeline_task(run_id: int):
     finally:
         db.close()
 
-@app.get("/")
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+import json
+
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    return {"message": "Meltano Pipeline Service", "status": "running"}
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Meltano Pipeline Control</title>
+        <script>
+            async function startPipeline() {
+                const button = document.getElementById('runButton');
+                button.disabled = true;
+                try {
+                    const response = await fetch('/run', { method: 'POST' });
+                    const data = await response.json();
+                    button.disabled = false;
+                    updateStatus(data.run_id);
+                } catch (error) {
+                    console.error('Error:', error);
+                    button.disabled = false;
+                }
+            }
+
+            async function updateStatus(runId) {
+                if (!runId) return;
+                
+                try {
+                    const response = await fetch(`/status/${runId}`);
+                    const data = await response.json();
+                    const statusDiv = document.getElementById('status');
+                    
+                    const newStatus = document.createElement('div');
+                    newStatus.className = `status-item ${data.status}`;
+                    newStatus.innerHTML = `
+                        Run ${data.run_id}: ${data.status}
+                        <br>
+                        Started: ${new Date(data.start_time).toLocaleString()}
+                    `;
+                    
+                    statusDiv.insertBefore(newStatus, statusDiv.firstChild);
+                    
+                    if (data.status === 'started') {
+                        setTimeout(() => updateStatus(runId), 2000);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            }
+        </script>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem; }
+            .container { max-width: 800px; margin: 0 auto; }
+            button { 
+                background: #4CAF50; 
+                color: white; 
+                padding: 10px 20px; 
+                border: none; 
+                border-radius: 4px; 
+                cursor: pointer;
+                font-size: 16px;
+            }
+            button:disabled {
+                background: #cccccc;
+            }
+            .status-item {
+                margin: 10px 0;
+                padding: 15px;
+                border-radius: 4px;
+                background: #f5f5f5;
+            }
+            .started { border-left: 4px solid #2196F3; }
+            .completed { border-left: 4px solid #4CAF50; }
+            .failed { border-left: 4px solid #f44336; }
+            h1 { color: #333; }
+            .status-container {
+                margin-top: 2rem;
+                padding: 1rem;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Meltano Pipeline Control</h1>
+            <button id="runButton" onclick="startPipeline()">Start Pipeline</button>
+            
+            <div class="status-container">
+                <h2>Pipeline Runs</h2>
+                <div id="status"></div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.post("/run")
 async def run_pipeline(background_tasks: BackgroundTasks):
