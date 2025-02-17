@@ -1,4 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import HTMLResponse
 import meltano.core.tracking
 from meltano.core.project import Project
 from meltano.core.tracking.contexts import CliContext
@@ -29,7 +30,6 @@ class PipelineRun(Base):
     start_time = sa.Column(sa.DateTime, default=datetime.utcnow)
     status = sa.Column(sa.String)
 
-# Create tables on startup
 Base.metadata.create_all(bind=engine)
 
 async def run_pipeline_task(run_id: int):
@@ -40,11 +40,9 @@ async def run_pipeline_task(run_id: int):
         project = Project.find()
         meltano.core.tracking.DISABLED = True
         
-        context = CliContext(
-            project=project,
-            command="elt",
-            command_args=["tap-csv", "target-postgres", "--job_id", str(run_id)]
-        )
+        context = CliContext()
+        context.command = "elt"
+        context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
         
         pipeline_run = db.query(PipelineRun).get(run_id)
         pipeline_run.status = "completed"
@@ -59,10 +57,6 @@ async def run_pipeline_task(run_id: int):
         raise e
     finally:
         db.close()
-
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-import json
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
