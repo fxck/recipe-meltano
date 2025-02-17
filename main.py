@@ -53,9 +53,26 @@ async def run_pipeline_task(run_id: int):
 
             logger.info(f"Executing meltano command in {project_dir}")
 
-            # Execute meltano command
+            # Install plugins first
+            logger.info("Installing Meltano plugins...")
+            install_process = subprocess.Popen(
+                ['meltano', 'install'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=project_dir,
+                env=env,
+                text=True
+            )
+            install_stdout, install_stderr = install_process.communicate()
+            if install_process.returncode != 0:
+                raise Exception(f"Failed to install plugins:\n{install_stderr}")
+
+            logger.info("Plugins installed successfully")
+
+            # Execute meltano command (using 'el' instead of deprecated 'elt')
+            logger.info("Executing pipeline...")
             process = subprocess.Popen(
-                ['meltano', 'elt', 'tap-csv', 'target-postgres'],
+                ['meltano', 'el', 'tap-csv', 'target-postgres', '--full-refresh'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=project_dir,
@@ -65,7 +82,21 @@ async def run_pipeline_task(run_id: int):
 
             # Capture output
             stdout, stderr = process.communicate()
-            combined_output = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+            combined_output = f"""Pipeline Execution Log:
+
+INSTALLATION:
+-------------
+{install_stdout}
+{install_stderr}
+
+PIPELINE EXECUTION:
+------------------
+STDOUT:
+{stdout}
+
+STDERR:
+{stderr}
+"""
             logger.info(f"Pipeline process completed with return code: {process.returncode}")
 
             if process.returncode != 0:
