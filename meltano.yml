@@ -8,7 +8,7 @@ plugins:
       config:
         files:
           - entity: test_data
-            path: ./sample_data.csv
+            path: /var/www/sample_data.csv
             keys: ["id"]
             delimiter: ","
   loaders:
