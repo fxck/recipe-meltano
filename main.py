@@ -42,14 +42,18 @@ def clean_ansi(text):
 def find_latest_data_table(db):
     """Find the most recently created data table."""
     try:
-        table_query = """
+        # Import text from sqlalchemy
+        from sqlalchemy import text
+
+        table_query = text("""
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
         AND table_name ~ '^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$'
         ORDER BY table_name DESC
         LIMIT 1;
-        """
+        """)
+
         result = db.execute(table_query).fetchone()
         return result[0] if result else None
     except Exception as e:
@@ -63,19 +67,20 @@ def get_data_summary(db):
         if not table_name:
             return "No data table found. The pipeline may not have completed successfully."
 
-        result = db.execute(f"""
+        query = text(f"""
             SELECT
                 COUNT(*) as total_records,
                 SUM(revenue) as total_revenue,
                 MIN(date) as earliest_date,
                 MAX(date) as latest_date
             FROM "{table_name}";
-        """).fetchone()
+        """)
+        result = db.execute(query).fetchone()
 
         if not result.total_records:
             return "No records found in the data table"
 
-        top_products = db.execute(f"""
+        top_query = text(f"""
             SELECT
                 name,
                 revenue,
@@ -84,22 +89,8 @@ def get_data_summary(db):
             FROM "{table_name}"
             ORDER BY revenue DESC
             LIMIT 3;
-        """).fetchall()
-
-        summary = f"""Data Summary:
--------------
-Total Records: {result.total_records}
-Total Revenue: ${result.total_revenue:,.2f}
-Date Range: {result.earliest_date} to {result.latest_date}
-
-Top Products by Revenue:
----------------------""" + "\n".join(f"\n{row.name}: ${row.revenue:,.2f} ({row.date})"
-                for row in top_products)
-
-        return summary
-    except Exception as e:
-        logger.error(f"Error getting data summary: {str(e)}")
-        return f"Error analyzing data: {str(e)}"
+        """)
+        top_products = db.execute(top_query).fetchall()
 
 async def run_pipeline_task(run_id: int):
     db = SessionLocal()
