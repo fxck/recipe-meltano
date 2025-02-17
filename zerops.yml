@@ -14,9 +14,7 @@ zerops:
       prepareCommands:
         - sudo apk add gcc python3-dev musl-dev linux-headers
         - uv pip install --system -r requirements.txt
-        - mv ./meltano.yml /var/www/
-        - mv ./plugins /var/www/
-        - cd /var/www && meltano install
+        - meltano install
       start: gunicorn main:app --bind 0.0.0.0:8000 --workers ${WORKERS} --worker-class uvicorn.workers.UvicornWorker
       envVariables:
         DATABASE_URL: ${db_connectionString}/${db_dbName}
