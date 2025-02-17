@@ -13,6 +13,7 @@ zerops:
           httpSupport: true
       prepareCommands:
         - pwd
+        - ls -la
         - sudo apk add gcc python3-dev musl-dev linux-headers
         - uv pip install --system -r requirements.txt
         - meltano install
