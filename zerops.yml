@@ -2,7 +2,9 @@ zerops:
   - setup: meltano
     build:
       deploy: ./
-      addToRunPrepare: requirements.txt
+      addToRunPrepare: 
+        - requirements.txt
+        - meltano.yml
     run:
       base: python@3.11
       ports:
