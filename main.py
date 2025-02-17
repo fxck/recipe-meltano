@@ -27,7 +27,7 @@ Base = declarative_base()
 
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
-    
+
     id = sa.Column(sa.Integer, primary_key=True)
     start_time = sa.Column(sa.DateTime, default=datetime.utcnow)
     status = sa.Column(sa.String)
@@ -39,21 +39,40 @@ async def run_pipeline_task(run_id: int):
     db = SessionLocal()
     try:
         logger.info(f"Starting pipeline run {run_id}")
-        
-        # Capture output
+
         output_buffer = io.StringIO()
         with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-            project = Project.find()
-            meltano.core.tracking.DISABLED = True
-            
-            context = CliContext(command="elt")
-            context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
-        
+            try:
+                # Find project and configure
+                project = Project.find()
+                meltano.core.tracking.DISABLED = True
+
+                logger.info("Project found, preparing to run pipeline")
+
+                # Create and configure CLI context
+                context = CliContext(command="elt")
+                context.command_args = ["tap-csv", "target-postgres", "--job_id", str(run_id)]
+
+                logger.info(f"Executing pipeline with args: {context.command_args}")
+
+                # Actually execute the pipeline
+                project.run(context)
+
+                logger.info("Pipeline execution completed")
+
+            except Exception as e:
+                logger.error(f"Error during pipeline execution: {str(e)}")
+                raise
+
+        # Get the captured output
+        output_text = output_buffer.getvalue()
+        logger.info(f"Captured output: {output_text[:200]}...")  # Log first 200 chars
+
         pipeline_run = db.query(PipelineRun).get(run_id)
         pipeline_run.status = "completed"
-        pipeline_run.output = output_buffer.getvalue()
+        pipeline_run.output = output_text
         logger.info(f"Pipeline run {run_id} completed successfully")
-        
+
         db.commit()
     except Exception as e:
         logger.error(f"Pipeline run {run_id} failed: {str(e)}")
@@ -79,7 +98,7 @@ async def root():
                     const data = await response.json();
                     const statusDiv = document.getElementById('status');
                     statusDiv.innerHTML = '';
-                    
+
                     data.runs.forEach(run => {
                         addRunToHistory(run);
                     });
@@ -118,18 +137,18 @@ async def root():
 
             async function updateStatus(runId) {
                 if (!runId) return;
-                
+
                 try {
                     const response = await fetch(`/status/${runId}`);
                     const data = await response.json();
-                    
+
                     const existingRun = document.querySelector(`.status-item[data-run-id="${data.run_id}"]`);
                     if (existingRun) {
                         existingRun.className = `status-item ${data.status}`;
                     } else {
                         addRunToHistory(data);
                     }
-                    
+
                     if (data.status === 'started') {
                         setTimeout(() => updateStatus(runId), 2000);
                     }
@@ -142,11 +161,11 @@ async def root():
                 try {
                     const response = await fetch(`/status/${runId}`);
                     const data = await response.json();
-                    
+
                     const modal = document.getElementById('detailsModal');
                     const content = document.getElementById('modalContent');
                     modal.style.display = 'block';
-                    
+
                     content.innerHTML = `
                         <h3>Pipeline Run ${data.run_id}</h3>
                         <p><strong>Status:</strong> ${data.status}</p>
@@ -167,18 +186,18 @@ async def root():
             document.addEventListener('DOMContentLoaded', loadHistory);
         </script>
         <style>
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 margin: 2rem;
                 line-height: 1.5;
             }
             .container { max-width: 800px; margin: 0 auto; }
-            button { 
-                background: #4CAF50; 
-                color: white; 
-                padding: 10px 20px; 
-                border: none; 
-                border-radius: 4px; 
+            button {
+                background: #4CAF50;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 4px;
                 cursor: pointer;
                 font-size: 16px;
             }
@@ -249,7 +268,7 @@ async def root():
         <div class="container">
             <h1>Meltano Pipeline Control</h1>
             <button id="runButton" onclick="startPipeline()">Start Pipeline</button>
-            
+
             <div class="status-container">
                 <h2>Pipeline Runs</h2>
                 <div id="status"></div>
@@ -274,10 +293,10 @@ async def run_pipeline(background_tasks: BackgroundTasks):
         db.add(pipeline_run)
         db.commit()
         db.refresh(pipeline_run)
-        
+
         logger.info(f"Created new pipeline run with ID {pipeline_run.id}")
         background_tasks.add_task(run_pipeline_task, pipeline_run.id)
-        
+
         return {
             "message": "Pipeline started",
             "run_id": pipeline_run.id
@@ -308,7 +327,7 @@ async def get_status(run_id: int):
         pipeline_run = db.query(PipelineRun).get(run_id)
         if not pipeline_run:
             return {"error": "Run not found"}
-            
+
         return {
             "run_id": pipeline_run.id,
             "status": pipeline_run.status,
