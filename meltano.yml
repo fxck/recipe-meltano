@@ -17,6 +17,7 @@ plugins:
       pip_url: git+https://github.com/MeltanoLabs/target-postgres.git
       config:
         default_target_schema: public
+        sqlalchemy_url: ${DATABASE_URL}
   transformers:
     - name: dbt
       variant: dbt-labs
