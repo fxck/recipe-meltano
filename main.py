@@ -43,17 +43,15 @@ def clean_ansi(text):
 def get_data_summary(db):
     """Get summary statistics from loaded data."""
     try:
-        # Use fixed table name
         table_name = "sales_data"
 
-        # Create a new transaction for these queries
         with db.begin():
             query = text(f"""
                 SELECT
                     COUNT(*) as total_records,
-                    SUM(revenue) as total_revenue,
-                    MIN(date) as earliest_date,
-                    MAX(date) as latest_date
+                    SUM(CAST(revenue AS decimal)) as total_revenue,
+                    MIN(CAST(date AS date)) as earliest_date,
+                    MAX(CAST(date AS date)) as latest_date
                 FROM "{table_name}";
             """)
             result = db.execute(query).fetchone()
@@ -64,11 +62,11 @@ def get_data_summary(db):
             top_query = text(f"""
                 SELECT
                     name,
-                    revenue,
-                    date,
-                    RANK() OVER (ORDER BY revenue DESC) as revenue_rank
+                    CAST(revenue AS decimal) as revenue,
+                    CAST(date AS date) as date,
+                    RANK() OVER (ORDER BY CAST(revenue AS decimal) DESC) as revenue_rank
                 FROM "{table_name}"
-                ORDER BY revenue DESC
+                ORDER BY CAST(revenue AS decimal) DESC
                 LIMIT 3;
             """)
             top_products = db.execute(top_query).fetchall()
@@ -86,7 +84,6 @@ Top Products by Revenue:
             return summary
     except Exception as e:
         logger.error(f"Error getting data summary: {str(e)}")
-        # Ensure transaction is rolled back
         db.rollback()
         return f"Error analyzing data: {str(e)}"
 
@@ -171,6 +168,7 @@ async def root():
                     const statusDiv = document.getElementById('status');
                     statusDiv.innerHTML = '';
 
+                    // data.runs is already sorted newest-first from the backend
                     data.runs.forEach(run => {
                         addRunToHistory(run);
                     });
@@ -201,8 +199,8 @@ async def root():
                     </div>
                 `;
 
-                // Change from insertBefore to appendChild to maintain consistent ordering
-                statusDiv.appendChild(newStatus);
+                // Insert at the beginning to maintain newest-first order
+                statusDiv.insertBefore(newStatus, statusDiv.firstChild);
             }
 
             async function startPipeline() {
