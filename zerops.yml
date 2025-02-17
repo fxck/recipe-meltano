@@ -15,8 +15,6 @@ zerops:
         - port: 8000
           httpSupport: true
       prepareCommands:
-        - pwd
-        - ls -la
         - sudo apk add gcc python3-dev musl-dev linux-headers
         - uv pip install --system -r requirements.txt
         - mv ./meltano.yml /var/www
