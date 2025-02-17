@@ -3,7 +3,8 @@ from fastapi.responses import HTMLResponse
 import meltano.core.tracking
 from meltano.core.project import Project
 from meltano.core.tracking.contexts import CliContext
-from meltano.core.runner import CliRunner
+from meltano.core.cli import cli
+import click
 import os
 from datetime import datetime
 import sqlalchemy as sa
@@ -56,18 +57,19 @@ async def run_pipeline_task(run_id: int):
 
                 logger.info(f"Executing pipeline with args: {context.command_args}")
 
-                # Import the proper command class
-                from meltano.core.runner import CliRunner
-
-                # Create the runner
-                runner = CliRunner(project)
+                # Create a new Click context
+                ctx = click.Context(cli)
+                ctx.obj = {'project': project}
 
                 # Execute the ELT command
-                result = runner.invoke(["elt", "tap-csv", "target-postgres", "--job_id", str(run_id)])
+                result = cli.get_command(ctx, 'elt').invoke(
+                    ctx,
+                    ['tap-csv', 'target-postgres', '--job-id', str(run_id)]
+                )
 
-                logger.info(f"Pipeline execution completed with exit code: {result.exit_code}")
-                if result.exit_code != 0:
-                    raise Exception(f"Pipeline failed with exit code {result.exit_code}")
+                logger.info("Pipeline execution completed")
+                if result != 0:
+                    raise Exception(f"Pipeline failed with exit code {result}")
 
             except Exception as e:
                 logger.error(f"Error during pipeline execution: {str(e)}")
